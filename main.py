@@ -80,13 +80,14 @@ def gen_embedding(doc):
 
 def retrieval():
     index = VectorStoreIndex.from_vector_store(PINE_VECTOR_STORE)
-    retriever = VectorIndexRetriever(index=index, similarity_top_k=5)
+    retriever = VectorIndexRetriever(index=index, similarity_top_k=10)
     query_engine = RetrieverQueryEngine(retriever=retriever)
     running = True
     while running:
         query = input("Question: ")
         if query == 'exit':
             running = False
+            break
         llmquery = query_engine.query(query)
         print(llmquery.response)
 
