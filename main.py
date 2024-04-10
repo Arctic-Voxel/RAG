@@ -1,6 +1,6 @@
 import os.path, os, pinecone, fitz,shutil
 from pathlib import Path
-from pinecone import Pinecone
+from pinecone import Pinecone, PodSpec
 from llama_index.core import (
     VectorStoreIndex,
     set_global_service_context,
@@ -15,8 +15,11 @@ from llama_index.core.retrievers import VectorIndexRetriever
 from llama_index.core.query_engine import RetrieverQueryEngine
 import gradio as gr
 PINECONE_INDEX_NAME = 'rag'
-PINECONE_INDEX = pinecone.Index(os.environ.get('PINECONE_API_KEY'), os.environ.get('PINECONE_HOST'))
+PINECONE=Pinecone(api_key=os.environ.get('PINECONE_API_KEY'))
+# PINECONE_INDEX = pinecone.Index(os.environ.get('PINECONE_API_KEY'), os.environ.get('PINECONE_HOST'))
+PINECONE_INDEX=PINECONE.Index('RAG',host=os.environ.get('PINECONE_HOST'))
 PINE_VECTOR_STORE = PineconeVectorStore(pinecone_index=PINECONE_INDEX)
+BUSY = False
 
 DOCUMENT_PATH = Path('./documents')
 embed_model = OpenAIEmbedding()
@@ -30,6 +33,8 @@ llm = OpenAI(model="gpt-4")
 service_context = ServiceContext.from_defaults(llm=llm)
 set_global_service_context(service_context)
 
+
+##======================================================== Basic Functions ============================================================================
 # Initialises the database
 def init_pine():
     # Pinecone
@@ -83,8 +88,7 @@ def retrieval():
     index = VectorStoreIndex.from_vector_store(PINE_VECTOR_STORE)
     retriever = VectorIndexRetriever(index=index, similarity_top_k=10)
     query_engine = RetrieverQueryEngine(retriever=retriever)
-    running = True
-    while running:
+    while True:
         query = input("Question: ")
         if query == 'exit':
             running = False
@@ -93,18 +97,23 @@ def retrieval():
         print(llmquery.response)
 
 def reset():
+    global PINECONE_INDEX
     try:
-        PINECONE_INDEX.delete(delete_all=True)
+        # PINECONE_INDEX.delete(delete_all=True,namespace='Default')
+        PINECONE.delete_index(PINECONE_INDEX_NAME)
         print("Database has been reset.")
     except:
         print("Error! Database already empty!")
-
+    PINECONE.create_index(PINECONE_INDEX_NAME,dimension=1536,metric="cosine",spec=PodSpec(environment="gcp-starter"))
+    PINECONE_INDEX = PINECONE.Index(name=PINECONE_INDEX_NAME)
 # ==========================================   Gradio Interfaces and Functions =================================================
 # Gradio querying function
 def gradioQuery(message,history):
     index = VectorStoreIndex.from_vector_store(PINE_VECTOR_STORE)
     retriever = VectorIndexRetriever(index=index, similarity_top_k=10)
     query_engine = RetrieverQueryEngine(retriever=retriever)
+    if BUSY:
+        return "Database is being updated. Please wait"
     if message == 'exit':
         return ' '
     llmquery = query_engine.query(message)
@@ -113,15 +122,15 @@ def gradioQuery(message,history):
 # Adding file into the vector database
 def addFile(file):
     global PINE_VECTOR_STORE
-    filePath = file.name
-    fileName = os.path.basename(filePath)
-    copyPath = DOCUMENT_PATH.name+'/'+fileName
-    shutil.copyfile(filePath,copyPath)
     nodeList = []
-    doc = fitz.open(filePath)
-    nodeList = gen_embedding(doc,nodeList)
     passednodes = []
-
+    for x in range(len(file)):
+        filePath = file[x].name
+        fileName = os.path.basename(filePath)
+        copyPath = DOCUMENT_PATH.name+'/'+fileName
+        shutil.copyfile(filePath,copyPath)
+        doc = fitz.open(filePath)
+        nodeList = gen_embedding(doc,nodeList)
     for node in nodeList:
         print('=====================')
         print(node)
@@ -133,11 +142,8 @@ def addFile(file):
             passednodes.append(node)
         except:
             pass
-    print(PINE_VECTOR_STORE)
     PINE_VECTOR_STORE.add(passednodes)
-    return "File Inserted. On to the next!", listFile()
-# except:
-#     return "Error during file handling :(", listFile()
+    return "File Inserted. On to the next!"
 
 def listFile():
     fileList = []
@@ -147,32 +153,71 @@ def listFile():
     return fileList
 
 def deleteFile(file):
-    filePath = DOCUMENT_PATH.name+'/'+file
-    os.remove(filePath)
+    global BUSY  
+    if file:
+        BUSY = True
+        filePath = DOCUMENT_PATH.name+'/'+file
+        os.remove(filePath)
+        reset()
+        ingestion()
+        BUSY=False
+        return "File has been deleted!"
+    else:
+        return "File not found"
+def deleteAll():
+    global BUSY
+    BUSY = True
+    files = DOCUMENT_PATH.rglob('*.pdf')
+    for file in files:
+        filePath = DOCUMENT_PATH.name+'/'+ file.name
+        os.remove(filePath)
     reset()
     ingestion()
-    return "File has been deleted!"
+    BUSY=False
+    return "Database has been emptied!"
 
 def interfaces():
-    # Create the file upload interface.
-    uploadInterface = gr.Interface(
-        fn=addFile,
-        inputs=gr.File(label="Upload your file here"),
-        outputs=["text","text"],
-        title="File Upload"
-    )
-    chatInterface = gr.ChatInterface(gradioQuery)
+    with gr.Blocks() as demo:
+        with gr.Tab("Chat Interface"):
+            with gr.Column():
+                gr.Markdown("### Chat")
+                chat_history = gr.TextArea(label="Chat History", interactive=False, value="", lines=10)
+                user_input = gr.Textbox(label="Your Message")
+                send_button = gr.Button("Send")
 
-    # Combine both interfaces into tabs.
-    tabInterface = gr.TabbedInterface(
-        interface_list=[chatInterface, uploadInterface],
-        tab_names=["Chat", "File Upload"]
-    )
-    return tabInterface
+                def update_chat_history(message, chat_history):
+                    new_chat_history = chat_history + "\nUser: " + message + "\nBot: " + gradioQuery(message,chat_history)
+                    return new_chat_history, ""
+
+                send_button.click(
+                    fn=update_chat_history,
+                    inputs=[user_input, chat_history],
+                    outputs=[chat_history, user_input]
+                )
+        with gr.Tab("File Management"):
+            with gr.Row():
+                with gr.Column():
+                    gr.Markdown("### Upload Files")
+                    file_input = gr.File(label="Upload file",file_count='multiple')
+                    save_button = gr.Button("Save File")
+                with gr.Column():
+                    gr.Markdown("### Files")
+                    files_output = gr.TextArea()
+                    list_button = gr.Button("List Files")
+            
+            file_list = gr.Dropdown(label="Select a file to delete", choices=listFile())
+            delete_button = gr.Button("Delete Selected File")
+            delete_all_button = gr.Button("Destroy Database")
+            save_button.click(addFile, inputs=file_input, outputs=files_output)
+            list_button.click(listFile, inputs=[], outputs=files_output)
+            delete_button.click(deleteFile, inputs=file_list, outputs=files_output)
+            delete_all_button.click(deleteAll,inputs=[],outputs=files_output)
+    return demo
+
 
 # ========================================================== Main ==========================================================
 def main():
-    init_pine()
+    # init_pine()
     # reset()
     # ingestion()
     # retrieval()
