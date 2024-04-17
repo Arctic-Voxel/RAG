@@ -22,7 +22,7 @@ PINECONE_INDEX = PINECONE.Index('RAG', host=os.environ.get('PINECONE_HOST'))
 PINE_VECTOR_STORE = PineconeVectorStore(pinecone_index=PINECONE_INDEX)
 BUSY = False
 
-DOCUMENT_PATH = Path('./documents')
+
 embed_model = OpenAIEmbedding()
 text_parser = SentenceSplitter(
     chunk_size=1024,
@@ -49,20 +49,20 @@ def ingestion():
     passednodes = []
     nodeList = []
     global PINE_VECTOR_STORE
-    for file in DOCUMENT_PATH.rglob('*.pdf'):
+    for file in Path('./documents').rglob('*.pdf'):
         doc = fitz.open(file)
         nodeList = gen_embedding(doc, nodeList)
     for node in nodeList:
-        print('=====================')
-        print(node)
-        try:
-            node_embedding = embed_model.get_text_embedding(
-                node.get_content(metadata_mode="all")
-            )
-            node.embedding = node_embedding
-            passednodes.append(node)
-        except:
-            pass
+        if node.text != '':
+            print(f"Processing node: {node.node_id}")
+            try:
+                node_embedding = embed_model.get_text_embedding(
+                    node.get_content(metadata_mode="all")
+                )
+                node.embedding = node_embedding
+                passednodes.append(node)
+            except:
+                pass
     PINE_VECTOR_STORE.add(passednodes)
 
 
@@ -134,21 +134,21 @@ def addFile(file):
     for x in range(len(file)):
         filePath = file[x].name
         fileName = os.path.basename(filePath)
-        copyPath = DOCUMENT_PATH.name + '/' + fileName
+        copyPath = Path('./documents').name + '/' + fileName
         shutil.copyfile(filePath, copyPath)
         doc = fitz.open(filePath)
         nodeList = gen_embedding(doc, nodeList)
     for node in nodeList:
-        print('=====================')
-        print(node)
-        try:
-            node_embedding = embed_model.get_text_embedding(
-                node.get_content(metadata_mode="all")
-            )
-            node.embedding = node_embedding
-            passednodes.append(node)
-        except:
-            pass
+        if node.text != '':
+            print(f"Processing node: {node.node_id}")
+            try:
+                node_embedding = embed_model.get_text_embedding(
+                    node.get_content(metadata_mode="all")
+                )
+                node.embedding = node_embedding
+                passednodes.append(node)
+            except:
+                pass
     PINE_VECTOR_STORE.add(passednodes)
     return "File Inserted. On to the next!", listFile()
 
@@ -158,7 +158,7 @@ def addFile(file):
 
 def listFile():
     fileList = []
-    for file in DOCUMENT_PATH.rglob('*.pdf'):
+    for file in Path('./documents').rglob('*.pdf'):
         fileName = os.path.basename(file)
         fileList.append(fileName)
     return fileList
@@ -168,7 +168,7 @@ def deleteFile(file):
     global BUSY
     if file:
         BUSY = True
-        filePath = DOCUMENT_PATH.name + '/' + file
+        filePath = Path('./documents').name + '/' + file
         os.remove(filePath)
         reset()
         ingestion()
@@ -181,9 +181,9 @@ def deleteFile(file):
 def deleteAll():
     global BUSY
     BUSY = True
-    files = DOCUMENT_PATH.rglob('*.pdf')
+    files = Path('./documents').rglob('*.pdf')
     for file in files:
-        filePath = DOCUMENT_PATH.name + '/' + file.name
+        filePath = Path('./documents').name + '/' + file.name
         os.remove(filePath)
     reset()
     ingestion()
@@ -233,8 +233,8 @@ def interfaces():
 # ========================================================== Main ==========================================================
 def main():
     # init_pine()
-    # reset()
-    # ingestion()
+    reset()
+    ingestion()
     # retrieval()
     demo = interfaces()
     demo.launch()
