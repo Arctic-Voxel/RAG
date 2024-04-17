@@ -2,7 +2,6 @@ from llama_index.core import VectorStoreIndex, SimpleDirectoryReader, ServiceCon
 from llama_index.llms.openai import OpenAI
 import openai
 
-
 # define LLM
 llm = OpenAI(model="gpt-4", temperature=0, max_tokens=1000)
 
