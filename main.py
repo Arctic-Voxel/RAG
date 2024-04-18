@@ -123,7 +123,12 @@ def audioConverter(file):
    
     return pdfName
 
-
+def listFileOutput():
+    fileList = []
+    for file in Path('./documents').rglob('*.pdf'):
+        fileName = os.path.basename(file)
+        fileList.append(fileName)
+    return fileList
 # CLI code for querying GPT
 def retrieval():
     index = VectorStoreIndex.from_vector_store(PINE_VECTOR_STORE)
@@ -208,19 +213,12 @@ def addFile(file):
     return "File Inserted. On to the next!"
 
 
-# except:
-#     return "Error during file handling :(", listFile()
-
 def listFile():
-    fileList = []
+    files = listFileOutput()
     message = "Here are the files currently inside: \n"
-    for file in Path('./documents').rglob('*.pdf'):
-        fileName = os.path.basename(file)
-        fileList.append(fileName)
-        message = message + "\u2022 {fileName}\n".format(fileName=fileName)
-        
+    for file in files:
+        message = message + "\u2022 {fileName}\n".format(fileName=file)
     return message
-
 
 def deleteFile(file):
     global BUSY
@@ -280,7 +278,7 @@ def interfaces():
                     files_output = gr.TextArea(label='Output')
                     list_button = gr.Button("List Files")
 
-            file_list = gr.Dropdown(label="Select a file to delete", choices=listFile())
+            file_list = gr.Dropdown(label="Select a file to delete", choices=listFileOutput())
             delete_button = gr.Button("Delete Selected File")
             delete_all_button = gr.Button("Destroy Database")
             save_button.click(addFile, inputs=file_input, outputs=files_output)
