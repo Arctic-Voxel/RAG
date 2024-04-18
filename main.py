@@ -1,4 +1,4 @@
-import os.path, os, pinecone, fitz, shutil
+import os, pinecone, fitz, shutil
 from pathlib import Path
 from pinecone import Pinecone, PodSpec
 from llama_index.core import (
@@ -128,10 +128,19 @@ def gradioQuery(message, history):
 
 # Adding file into the vector database
 def addFile(file):
+    global BUSY
     global PINE_VECTOR_STORE
     nodeList = []
     passednodes = []
+    if BUSY==True:
+        return "Server is currently busy. Please try again later"
+    else:
+        BUSY= False
+    BUSY=True
     for x in range(len(file)):
+        if Path(file[x]).is_file():
+            BUSY=False
+            return "File exists! Try with another file"
         filePath = file[x].name
         fileName = os.path.basename(filePath)
         copyPath = Path('./documents').name + '/' + fileName
@@ -150,6 +159,7 @@ def addFile(file):
             except:
                 pass
     PINE_VECTOR_STORE.add(passednodes)
+    BUSY=False
     return "File Inserted. On to the next!", listFile()
 
 
@@ -166,6 +176,8 @@ def listFile():
 
 def deleteFile(file):
     global BUSY
+    if BUSY:
+        return "Server is currently busy. Please try again later"
     if file:
         BUSY = True
         filePath = Path('./documents').name + '/' + file
@@ -217,7 +229,7 @@ def interfaces():
                     save_button = gr.Button("Save File")
                 with gr.Column():
                     gr.Markdown("### Files")
-                    files_output = gr.TextArea()
+                    files_output = gr.TextArea(label='Output')
                     list_button = gr.Button("List Files")
 
             file_list = gr.Dropdown(label="Select a file to delete", choices=listFile())
@@ -233,8 +245,8 @@ def interfaces():
 # ========================================================== Main ==========================================================
 def main():
     # init_pine()
-    reset()
-    ingestion()
+    # reset()
+    # ingestion()
     # retrieval()
     demo = interfaces()
     demo.launch()
