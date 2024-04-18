@@ -1,5 +1,7 @@
 import os, pinecone, fitz, shutil
+import speech_recognition as sr
 from pathlib import Path
+from fpdf import FPDF
 from pinecone import Pinecone, PodSpec
 from llama_index.core import (
     VectorStoreIndex,
@@ -65,6 +67,7 @@ def ingestion():
                 pass
     PINE_VECTOR_STORE.add(passednodes)
 
+#====================================== Helper Functions ================================
 
 def gen_embedding(doc, nodes):
     text_chunks = []
@@ -84,6 +87,41 @@ def gen_embedding(doc, nodes):
         src_page = doc[src_doc_idx]
         nodes.append(node)
     return nodes
+
+def audioConverter(file):
+    fileBase = os.path.basename(file)
+    fileFull = os.path.splitext(file)[0]
+    fileSplit = os.path.splitext(fileBase)
+    fileName = str(fileSplit[0])
+    command2mp3 = 'ffmpeg -i '+fileFull+'.mp4 '+fileFull+'.mp3'
+    command2wav = 'ffmpeg -i '+fileFull+'.mp3 '+fileFull+'.wav'
+    
+    match fileSplit[1]:
+        case '.mp4':
+            os.system(command2mp3)
+            os.system(command2wav)
+            os.remove(fileFull+'.mp3')
+        case '.mp3':
+            os.system(command2wav)
+            os.remove(fileFull+'.mp3')
+        case '.wav':
+            pass
+        case _:
+            return None
+    r = sr.Recognizer()
+    with sr.AudioFile(fileFull+'.wav') as source:
+        audio = r.record(source)
+        
+    audioText=r.recognize_google(audio)
+    os.remove(fileFull+'.wav')
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Arial",size=14)
+    pdf.multi_cell(w=0,h=10,txt=audioText)
+    pdfName = './documents/'+fileName+'.pdf'
+    pdf.output(pdfName)
+   
+    return pdfName
 
 
 # CLI code for querying GPT
@@ -138,11 +176,18 @@ def addFile(file):
         BUSY= False
     BUSY=True
     for x in range(len(file)):
-        if Path(file[x]).is_file():
+        fileName = os.path.basename(file[x])
+        if Path('documents/'+fileName).is_file():
             BUSY=False
             return "File exists! Try with another file"
-        filePath = file[x].name
-        fileName = os.path.basename(filePath)
+        fileExt = os.path.splitext(file[x])
+        if fileExt[1] == '.pdf':
+            filePath = file[x].name
+            passednodes
+        else:
+            filePath = audioConverter(file[x])
+            if filePath == None:
+                return "Failed to convert audio file, please try again"
         copyPath = Path('./documents').name + '/' + fileName
         shutil.copyfile(filePath, copyPath)
         doc = fitz.open(filePath)
@@ -160,7 +205,7 @@ def addFile(file):
                 pass
     PINE_VECTOR_STORE.add(passednodes)
     BUSY=False
-    return "File Inserted. On to the next!", listFile()
+    return "File Inserted. On to the next!"
 
 
 # except:
@@ -168,10 +213,13 @@ def addFile(file):
 
 def listFile():
     fileList = []
+    message = "Here are the files currently inside: \n"
     for file in Path('./documents').rglob('*.pdf'):
         fileName = os.path.basename(file)
         fileList.append(fileName)
-    return fileList
+        message = message + "\u2022 {fileName}\n".format(fileName=fileName)
+        
+    return message
 
 
 def deleteFile(file):
