@@ -1,0 +1,7 @@
+gradio~=4.25.0
+fpdf~=1.7.2
+openai~=1.14.3
+llama-index
+llama_index.vector_stores.pinecone
+fpdf
+SpeechRecognition
